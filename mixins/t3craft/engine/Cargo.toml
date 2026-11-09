@@ -1,0 +1,23 @@
+[package]
+name = "t3craft_engine"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "T3 Craft for Horizon: see, read and reply to your T3 Code threads without leaving the game."
+
+# The bundle's own crate: the launcher stages it into Horizon's workspace, so
+# every dependency must be a registry crate already in Horizon's Cargo.lock
+# (docs/native-mods.md). All of these are: the client itself uses them.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2", default-features = false, features = ["tls"] }
+sha2 = "0.10"
+base64 = "0.22"
+getrandom = "0.2"
+url = "2"
+open = "5"
+chrono = { version = "0.4", default-features = false, features = ["std", "alloc", "clock"] }
+
+[dev-dependencies]

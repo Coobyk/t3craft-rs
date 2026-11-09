@@ -1,0 +1,5 @@
+# Local development workspace: the engine crate the bundle adds to the game
+# (mixins/t3craft/engine), so `cargo test` works on the mod's own logic.
+[workspace]
+members = ["mixins/t3craft/engine"]
+resolver = "3"
