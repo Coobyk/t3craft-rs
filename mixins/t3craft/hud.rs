@@ -52,10 +52,18 @@ fn t3craft_hud(
         ty += 10.0 * model.scale;
     }
 
-    // The toast card, under the box, while a transition is fresh.
+    // The toast card, while a transition is fresh: under the box for top
+    // anchors, above it for bottom ones so it stays on screen.
     if let Some((title, line, color)) = &model.toast {
         let tw = width_of(&[(title.clone(), 0), (line.clone(), 0)]) + 8.0;
-        let ty0 = y + h + 3.0;
+        let ty0 = if matches!(
+            model.anchor,
+            t3craft_engine::HudAnchor::BottomLeft | t3craft_engine::HudAnchor::BottomRight
+        ) {
+            y - 27.0
+        } else {
+            y + h + 3.0
+        };
         game.native_fill(batch, [x, ty0, tw, 24.0], 0xE0_10_10_14);
         game.native_text(batch, title, [x + 4.0, ty0 + 4.0], *color, true);
         game.native_text(batch, line, [x + 4.0, ty0 + 13.0], 0xF2_F2_F2, true);

@@ -471,7 +471,8 @@ fn layout_detail(
     hit.push(HitRegion { rect, action: Action::ScrollDetail });
 
     let Some(selected) = ui.selected.clone() else {
-        text(out, [rect[0] + 8.0, rect[1] + 10.0], "Pick a thread on the left", TEXT_MUTED);
+        let hint = ellipsize("Pick a thread on the left", rect[2] - 2.0 * (BUTTON_W + 12.0), measure);
+        text(out, [rect[0] + 8.0, rect[1] + 10.0], &hint, TEXT_MUTED);
         return;
     };
     let summary = snapshot
