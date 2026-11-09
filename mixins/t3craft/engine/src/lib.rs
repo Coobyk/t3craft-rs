@@ -338,9 +338,6 @@ pub fn screen_click(at: [f32; 2], right: bool) {
         Some(Action::CancelSignIn) => {
             engine.monitor.send(Command::SignOut);
         }
-        Some(Action::Close) => {
-            engine.effects.lock().unwrap().close_screen = true;
-        }
         Some(Action::ScrollList | Action::ScrollDetail) | None => {
             // Scroll regions also catch clicks: pressing anywhere but a field
             // unfocuses the reply box.

@@ -20,7 +20,6 @@ pub const ASSISTANT_ACCENT: u32 = 0xC9_A0_FF;
 pub const INPUT_BG: u32 = 0xFF_00_00_00;
 pub const BUTTON_BG: u32 = 0x60_60_60_60;
 pub const BUTTON_ACCENT: u32 = 0xA0_3B_82_F6;
-pub const TOAST_BG: u32 = 0xE0_10_10_14;
 
 pub fn attention_color(attention: Attention) -> u32 {
     match attention {
@@ -63,7 +62,6 @@ pub enum Action {
     SignIn,
     SignOut,
     CancelSignIn,
-    Close,
     ScrollList,
     ScrollDetail,
 }
@@ -475,12 +473,22 @@ fn layout_detail(
         text(out, [x, y], &ellipsize(title, width - 2.0 * (BUTTON_W + 8.0), measure), TEXT_PRIMARY);
         y += LINE_HEIGHT;
     }
-    let status = summary.map(|t| t.status.clone()).unwrap_or_default();
+    let status = summary
+        .map(|t| t.status.clone())
+        .or_else(|| ui.detail.as_ref().map(|d| d.status.clone()))
+        .unwrap_or_default();
     text(out, [x, y], &status_label(&status), status_color(&status));
     y += LINE_HEIGHT;
 
     if let Some(detail) = &ui.detail {
         let mut meta = Vec::new();
+        if let Some(run) = detail.latest_run {
+            if let Some(started) = run.started_at {
+                meta.push(format!("running {}", crate::format::since(started)));
+            } else if let Some(done) = run.completed_at {
+                meta.push(format!("finished {} ago", crate::format::since(done)));
+            }
+        }
         if !detail.branch.is_empty() {
             meta.push(format!("⌥ {}", detail.branch));
         }

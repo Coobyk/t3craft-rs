@@ -45,8 +45,6 @@ impl From<ProtocolError> for McpError {
     }
 }
 
-struct SessionExpired;
-
 pub struct McpClient {
     agent: ureq::Agent,
     endpoint: String,

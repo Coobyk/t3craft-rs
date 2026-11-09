@@ -90,6 +90,8 @@ pub struct RunTiming {
 
 #[derive(Clone, Debug)]
 pub struct ThreadDetail {
+    /// Kept for parity with the Java model; the ref this detail answers.
+    #[allow(dead_code)]
     pub thread_ref: ThreadRef,
     pub title: String,
     pub status: String,
@@ -134,5 +136,7 @@ impl Snapshot {
 #[derive(Clone, Debug)]
 pub struct Transition {
     pub thread: ThreadSummary,
+    /// The attention it left, kept for parity with the Java model.
+    #[allow(dead_code)]
     pub previous: Option<Attention>,
 }
