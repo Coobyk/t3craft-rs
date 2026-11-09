@@ -573,7 +573,7 @@ fn layout_detail(
         ""
     };
     if !hint.is_empty() {
-        text(out, [input[0] + 4.0, input[1] + 5.0], hint, TEXT_MUTED);
+        text(out, [input[0] + 4.0, input[1] + 5.0], &ellipsize(hint, input[2] - 8.0, measure), TEXT_MUTED);
     } else {
         let shown = reply_with_cursor(&ui.reply, ui.cursor_char(), ui.reply_focused);
         text(out, [input[0] + 4.0, input[1] + 5.0], &ellipsize_tail(&shown, input[2] - 8.0, measure), TEXT_PRIMARY);
