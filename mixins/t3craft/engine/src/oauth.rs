@@ -125,6 +125,11 @@ fn wait_for_code(
         }
         match listener.accept() {
             Ok((stream, _)) => {
+                // Browsers open idle preconnects: without a deadline a silent
+                // socket would hold the single accept loop while the real
+                // /callback request waits in the backlog.
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(8)));
+                let _ = stream.set_write_timeout(Some(Duration::from_secs(8)));
                 match handle_callback(stream, expected_state) {
                     CallbackOutcome::Code(code) => return Ok(code),
                     CallbackOutcome::Failed(message) => return Err(message),

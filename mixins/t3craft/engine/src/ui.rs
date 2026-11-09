@@ -279,7 +279,8 @@ pub fn layout_screen(
     let list = [body[0], body[1], list_w, body[3]];
     let detail = [body[0] + list_w + 4.0, body[1], body[2] - list_w - 4.0, body[3]];
 
-    layout_list(ui, snapshot, measure, list, mouse, &mut out, &mut hit);
+    let connected = snapshot.connection() == Connection::Connected;
+    layout_list(ui, snapshot, connected, measure, list, mouse, &mut out, &mut hit);
     match snapshot.connection() {
         Connection::Connected | Connection::Unreachable => {
             layout_detail(ui, snapshot, measure, detail, mouse, &mut out, &mut hit)
@@ -296,6 +297,7 @@ pub fn layout_screen(
 fn layout_list(
     ui: &mut ScreenUi,
     snapshot: &Snapshot,
+    connected: bool,
     measure: &dyn Fn(&str) -> f32,
     rect: [f32; 4],
     mouse: [f32; 2],
@@ -327,12 +329,17 @@ fn layout_list(
     }
 
     if rows.is_empty() {
-        text(
-            out,
-            [rect[0] + 6.0, rect[1] + 6.0],
-            "Nothing running or waiting on you",
-            TEXT_MUTED,
-        );
+        // Only promise "nothing running" once connected; while signed out the
+        // right pane explains the state and a hint here collides with the
+        // header's status line.
+        if connected {
+            text(
+                out,
+                [rect[0] + 6.0, rect[1] + 6.0],
+                "Nothing running or waiting on you",
+                TEXT_MUTED,
+            );
+        }
         ui.list_rows = rows;
         ui.list_scroll_max = 0.0;
         return;
