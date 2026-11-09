@@ -10,10 +10,10 @@ fn t3craft_hud(
     if !game.native_on(t3craft_engine::ID) {
         return;
     }
-    let Some(model) = t3craft_engine::hud_model() else {
+    let game_ref = &*game;
+    let Some(model) = t3craft_engine::hud_model(&|text| game_ref.native_text_width(text)) else {
         return;
     };
-    let game_ref = &*game;
     let width_of = |rows: &[(String, u32)]| {
         rows.iter()
             .map(|(text, _)| game_ref.native_text_width(text))

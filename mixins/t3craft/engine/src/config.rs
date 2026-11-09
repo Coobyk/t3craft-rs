@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum HudAnchor {
     TopLeft,
-    #[default]
     TopRight,
     BottomLeft,
+    #[default]
     BottomRight,
 }
 
@@ -76,7 +76,8 @@ fn default_true() -> bool {
     true
 }
 fn default_anchor() -> HudAnchor {
-    HudAnchor::TopRight
+    // Bottom right keeps the box clear of vanilla's tutorial toasts.
+    HudAnchor::BottomRight
 }
 fn default_offset() -> i32 {
     4
@@ -248,7 +249,7 @@ mod tests {
         assert_eq!(config.poll_seconds, 5);
         let out = serde_json::to_string(&config).unwrap();
         let back: Config = serde_json::from_str(&out).unwrap();
-        assert_eq!(back.hud_anchor, HudAnchor::TopRight);
+        assert_eq!(back.hud_anchor, HudAnchor::BottomRight);
     }
 
     #[test]

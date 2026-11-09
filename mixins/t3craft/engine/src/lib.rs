@@ -247,22 +247,29 @@ pub fn toggle_hud() {
 
 // ---- the HUD (native_hud) ----
 
-/// The corner box's contents, or None when hidden (setting off, key-toggled,
-/// or nothing to say while signed out? — the Java mod shows it regardless).
-pub fn hud_model() -> Option<ui::HudModel> {
+/// The corner box's contents, or None when hidden (setting off or
+/// key-toggled). `measure` is `native_text_width`, so rows can be cut to
+/// the box's real width.
+pub fn hud_model(measure: &dyn Fn(&str) -> f32) -> Option<ui::HudModel> {
     let engine = ENGINE.get()?;
     let config = engine.config.read().unwrap().clone();
     if !config.hud_enabled || *engine.hud_hidden_by_key.lock().unwrap() {
         return None;
     }
     let snapshot = engine.monitor.snapshot();
-    let rows = ui::hud_rows(&snapshot, &config);
+    let rows = ui::hud_rows(&snapshot, &config, measure);
     let toast = engine
         .toasts
         .lock()
         .unwrap()
         .first()
-        .map(|t| (t.title.clone(), t.line.clone(), t.color));
+        .map(|t| {
+            (
+                t.title.clone(),
+                ui::ellipsize(&t.line, 220.0, measure),
+                t.color,
+            )
+        });
     Some(ui::HudModel {
         anchor: config.hud_anchor,
         offset: [config.hud_offset_x as f32, config.hud_offset_y as f32],

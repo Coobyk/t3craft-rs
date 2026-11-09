@@ -175,10 +175,18 @@ pub fn ellipsize(text: &str, width: f32, measure: &dyn Fn(&str) -> f32) -> Strin
 
 // ---- the HUD ----
 
+/// The widest a HUD line may render; titles longer than this get a "…".
+const HUD_MAX_WIDTH: f32 = 220.0;
+
 /// The rows the corner box shows: one per live thread (attention order,
 /// sections dropped — the box is small), capped at `max_rows`, plus a
-/// "+N more" line and a status footer.
-pub fn hud_rows(snapshot: &Snapshot, config: &Config) -> Vec<(String, u32)> {
+/// "+N more" line and a status footer. Rows are cut to `HUD_MAX_WIDTH`
+/// so a long title can never overflow the box.
+pub fn hud_rows(
+    snapshot: &Snapshot,
+    config: &Config,
+    measure: &dyn Fn(&str) -> f32,
+) -> Vec<(String, u32)> {
     let mut rows = Vec::new();
     match snapshot.connection() {
         Connection::Connected => {
@@ -198,7 +206,7 @@ pub fn hud_rows(snapshot: &Snapshot, config: &Config) -> Vec<(String, u32)> {
                 .saturating_sub(shown.len());
             for thread in &shown {
                 rows.push((
-                    format!("● {}", thread.title),
+                    ellipsize(&format!("● {}", thread.title), HUD_MAX_WIDTH, measure),
                     attention_color(thread.attention()),
                 ));
             }
