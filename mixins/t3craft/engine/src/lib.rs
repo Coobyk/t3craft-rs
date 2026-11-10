@@ -199,6 +199,9 @@ fn drain_events(engine: &Engine) {
                         Ok(detail) => {
                             ui.detail = Some(detail);
                             ui.detail_error = None;
+                            // A thread opens on its latest messages: the next
+                            // layout snaps the pane to the bottom.
+                            ui.detail_scroll_to_end = true;
                         }
                         Err(e) => {
                             ui.detail_error = Some(e);

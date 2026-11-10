@@ -114,6 +114,10 @@ pub struct ScreenUi {
     /// Scroll bounds computed during the last layout, for input clamping.
     pub list_scroll_max: f32,
     pub detail_scroll_max: f32,
+    /// Snap the detail pane to its last line on the next layout: set when a
+    /// thread's messages arrive, so a freshly opened thread starts on the
+    /// newest ones. Consumed by `layout_detail`.
+    pub detail_scroll_to_end: bool,
 }
 
 impl ScreenUi {
@@ -560,6 +564,10 @@ fn layout_detail(
 
     let total_h = lines.len() as f32 * LINE_HEIGHT;
     ui.detail_scroll_max = (total_h - msg_rect[3]).max(0.0);
+    if ui.detail_scroll_to_end {
+        ui.detail_scroll = ui.detail_scroll_max;
+        ui.detail_scroll_to_end = false;
+    }
     ui.detail_scroll = ui.detail_scroll.clamp(0.0, ui.detail_scroll_max);
     let mut ly = msg_rect[1] - ui.detail_scroll;
     for (line, color) in &lines {
@@ -717,5 +725,50 @@ mod tests {
         let cut = ellipsize("a rather long title here", 60.0, &fixed);
         assert!(cut.ends_with('…'));
         assert!(fixed(&cut) <= 66.0);
+    }
+
+    fn thread_ref() -> ThreadRef {
+        ThreadRef { environment_id: None, thread_id: "t".to_owned() }
+    }
+
+    /// A thread that just loaded opens on its last messages, not its first.
+    #[test]
+    fn opens_a_thread_on_its_latest_messages() {
+        let mut ui = ScreenUi {
+            selected: Some(thread_ref()),
+            detail: Some(ThreadDetail {
+                thread_ref: thread_ref(),
+                title: "t".to_owned(),
+                status: "completed".to_owned(),
+                pending_request_count: 0,
+                model: String::new(),
+                runtime_mode: String::new(),
+                branch: String::new(),
+                latest_run: None,
+                messages: (0..50)
+                    .map(|i| ThreadMessage {
+                        role: MessageRole::Assistant,
+                        text: format!("message number {i}"),
+                    })
+                    .collect(),
+            }),
+            detail_scroll_to_end: true,
+            ..ScreenUi::default()
+        };
+        let snapshot = Snapshot {
+            connection: Some(Connection::Connected),
+            ..Snapshot::default()
+        };
+        layout_screen(
+            &mut ui,
+            &snapshot,
+            &Config::default(),
+            &fixed,
+            [0.0, 0.0, 400.0, 240.0],
+            [-1.0, -1.0],
+        );
+        assert!(ui.detail_scroll_max > 0.0);
+        assert_eq!(ui.detail_scroll, ui.detail_scroll_max);
+        assert!(!ui.detail_scroll_to_end);
     }
 }
