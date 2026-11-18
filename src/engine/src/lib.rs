@@ -307,7 +307,7 @@ pub fn screen_commands(
     let snapshot = engine.monitor.snapshot();
     let config = engine.config.read().unwrap().clone();
     let mut ui = engine.ui.lock().unwrap();
-    ui::layout_screen(&mut ui, &snapshot, &config, measure, rect, mouse)
+    ui::layout_screen(&mut ui, &snapshot, &config, measure, rect, mouse, ui::cursor_blink_on())
 }
 
 /// A mouse press on our screen (`native_screen_mouse_button_pressed_pre`).
@@ -441,11 +441,11 @@ pub fn screen_key(key: &str, repeat: bool, modifiers: u32) -> bool {
                 return true;
             }
             "key.keyboard.up" => {
-                ui.reply_cursor = 0;
+                move_reply_cursor(&mut ui, -1);
                 return true;
             }
             "key.keyboard.down" => {
-                ui.reply_cursor = ui.reply.chars().count();
+                move_reply_cursor(&mut ui, 1);
                 return true;
             }
             "key.keyboard.escape" => {
@@ -495,6 +495,29 @@ fn insert_char(ui: &mut ScreenUi, c: char) {
     chars.insert(cursor, c);
     ui.reply = chars.into_iter().collect();
     ui.reply_cursor = cursor + 1;
+}
+
+/// Up/Down inside the reply box: keep the char column on the wrapped line
+/// above or below, falling back to the text's ends (`reply_wrap` is cached
+/// by the layout each frame; before the first one the ends are all we know).
+fn move_reply_cursor(ui: &mut ScreenUi, dir: i32) {
+    let cursor = ui.cursor_char();
+    let Some(line_i) = ui
+        .reply_wrap
+        .iter()
+        .rposition(|(_, start)| cursor >= *start)
+    else {
+        ui.reply_cursor = if dir < 0 { 0 } else { ui.reply.chars().count() };
+        return;
+    };
+    let target = (line_i as i32 + dir).clamp(0, ui.reply_wrap.len() as i32 - 1) as usize;
+    if target == line_i {
+        ui.reply_cursor = if dir < 0 { 0 } else { ui.reply.chars().count() };
+        return;
+    }
+    let column = cursor - ui.reply_wrap[line_i].1;
+    let (line, start) = &ui.reply_wrap[target];
+    ui.reply_cursor = start + column.min(line.chars().count());
 }
 
 /// The list row `delta` steps from the selection (Down from none picks the

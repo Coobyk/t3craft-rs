@@ -1,0 +1,104 @@
+id = "t3craft"
+name = "T3 Craft"
+version = "0.1.1"
+description = "See, read and reply to your T3 Code threads without leaving the game."
+authors = []
+api = "0.2"
+side = "client"
+capabilities = ["registries"]
+
+[native]
+game = "26.3"
+horizon = "0b14f8acfd97fa2c750e42795249dcc981178ca4"
+mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
+
+# Every client tick: start the monitor, drain its events and open or close the
+# mod's screen.
+[[native.mixin]]
+id = "tick"
+target = "horizon_client::game::native_hooks::client_tick_pre::Game::native_client_tick_pre"
+kind = "HEAD"
+helper = "src/mixins/tick.rs"
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]
+
+# The two rebindable keys, registered by `Hooks::register` in the mod crate.
+[[native.mixin]]
+id = "key"
+target = "horizon_client::game::native_hooks::input_key::Game::native_input_key"
+kind = "HEAD"
+helper = "src/mixins/key.rs"
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "key", ty = "&str", value = "key" },
+  { name = "action", ty = "mod_api::KeyAction", value = "action" },
+]
+
+# The corner HUD and the toast card.
+[[native.mixin]]
+id = "hud"
+target = "horizon_client::game::native_hooks::render_gui_post::Game::native_render_gui_post"
+kind = "HEAD"
+helper = "src/mixins/hud.rs"
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut HudBatch", value = "&mut *draw" },
+  { name = "corners", ty = "&mut Corners", value = "&mut *corners" },
+]
+
+# The mod's own screen (Screen::Mod draws nothing itself).
+[[native.mixin]]
+id = "draw"
+target = "horizon_client::game::native_hooks::base::Game::native_screen_render_post"
+kind = "HEAD"
+helper = "src/mixins/draw.rs"
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut HudBatch", value = "&mut *draw" },
+]
+
+[[native.mixin]]
+id = "mouse"
+target = "horizon_client::game::native_hooks::base::Game::native_screen_mouse_button_pressed_pre"
+kind = "HEAD"
+helper = "src/mixins/mouse.rs"
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "button", ty = "i32", value = "button" },
+  { name = "canceled", ty = "&mut bool", value = "&mut *canceled" },
+]
+
+[[native.mixin]]
+id = "scroll"
+target = "horizon_client::game::native_hooks::base::Game::native_screen_mouse_scrolled_pre"
+kind = "HEAD"
+helper = "src/mixins/scroll.rs"
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "scroll", ty = "[f64; 2]", value = "scroll" },
+  { name = "canceled", ty = "&mut bool", value = "&mut *canceled" },
+]
+
+[[native.mixin]]
+id = "screen_key"
+target = "horizon_client::game::native_hooks::base::Game::native_screen_key_pressed_pre"
+kind = "HEAD"
+helper = "src/mixins/screen_key.rs"
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "key", ty = "&str", value = "key" },
+  { name = "repeat", ty = "bool", value = "repeat" },
+  { name = "modifiers", ty = "u32", value = "modifiers" },
+  { name = "canceled", ty = "&mut bool", value = "&mut *canceled" },
+]
+
+[[native.mixin]]
+id = "typed"
+target = "horizon_client::game::native_hooks::base::Game::native_screen_char_typed_pre"
+kind = "HEAD"
+helper = "src/mixins/typed.rs"
+bindings = [
+  { name = "game", ty = "&Game<'_>", value = "&*self" },
+  { name = "c", ty = "char", value = "c" },
+  { name = "modifiers", ty = "u32", value = "modifiers" },
+  { name = "canceled", ty = "&mut bool", value = "&mut *canceled" },
+]

@@ -118,6 +118,9 @@ pub struct ScreenUi {
     /// thread's messages arrive, so a freshly opened thread starts on the
     /// newest ones. Consumed by `layout_detail`.
     pub detail_scroll_to_end: bool,
+    /// The reply's wrapped lines and each line's first char index, cached by
+    /// the last layout so Up/Down can walk them without the text measurer.
+    pub reply_wrap: Vec<(String, usize)>,
 }
 
 impl ScreenUi {
@@ -127,6 +130,7 @@ impl ScreenUi {
             if !threads.iter().any(|t| &t.thread_ref == selected) {
                 self.selected = None;
                 self.detail = None;
+                self.reply_focused = false;
             }
         }
     }
@@ -157,6 +161,38 @@ pub fn wrap(text: &str, width: f32, measure: &dyn Fn(&str) -> f32) -> Vec<String
             }
         }
         lines.push(line);
+    }
+    lines
+}
+
+/// `wrap` that also reports each line's first char index in `text`, so the
+/// reply box can place its char cursor on a wrapped line.
+pub fn wrap_indexed(text: &str, width: f32, measure: &dyn Fn(&str) -> f32) -> Vec<(String, usize)> {
+    let mut lines = Vec::new();
+    let mut at = 0; // char index into `text`
+    for raw in text.split('\n') {
+        let mut line = String::new();
+        let mut start = at;
+        for (i, word) in raw.split(' ').enumerate() {
+            if i > 0 {
+                at += 1; // the space `split` ate
+            }
+            let candidate = if line.is_empty() {
+                word.to_owned()
+            } else {
+                format!("{line} {word}")
+            };
+            if measure(&candidate) <= width || line.is_empty() {
+                line = candidate;
+            } else {
+                lines.push((std::mem::take(&mut line), start));
+                line = word.to_owned();
+                start = at; // the wrap drops the space into the line it ends
+            }
+            at += word.chars().count();
+        }
+        lines.push((line, start));
+        at += 1; // the '\n' `split` ate
     }
     lines
 }
@@ -247,11 +283,14 @@ const LIST_RATIO: f32 = 0.38;
 const ROW_H: f32 = 14.0;
 const SECTION_H: f32 = 13.0;
 const REPLY_H: f32 = 18.0;
+/// The most wrapped lines the reply box grows to before it scrolls inside.
+const REPLY_MAX_LINES: usize = 4;
 const BUTTON_W: f32 = 52.0;
 const BUTTON_H: f32 = 14.0;
 
 /// Lay the screen out: draw commands plus the hit regions a click consults.
-/// `rect` is the window (`screen.rect`), `mouse` the cursor for hover paint.
+/// `rect` is the window (`screen.rect`), `mouse` the cursor for hover paint,
+/// `cursor_on` the reply cursor's blink phase.
 pub fn layout_screen(
     ui: &mut ScreenUi,
     snapshot: &Snapshot,
@@ -259,6 +298,7 @@ pub fn layout_screen(
     measure: &dyn Fn(&str) -> f32,
     rect: [f32; 4],
     mouse: [f32; 2],
+    cursor_on: bool,
 ) -> Vec<DrawCmd> {
     let mut out = Vec::new();
     let mut hit = Vec::new();
@@ -295,7 +335,7 @@ pub fn layout_screen(
     layout_list(ui, snapshot, connected, measure, list, mouse, &mut out, &mut hit);
     match snapshot.connection() {
         Connection::Connected | Connection::Unreachable => {
-            layout_detail(ui, snapshot, measure, detail, mouse, &mut out, &mut hit)
+            layout_detail(ui, snapshot, measure, detail, mouse, cursor_on, &mut out, &mut hit)
         }
         state => layout_connect(ui, state, measure, detail, mouse, &mut out, &mut hit),
     }
@@ -463,6 +503,7 @@ fn layout_detail(
     measure: &dyn Fn(&str) -> f32,
     rect: [f32; 4],
     mouse: [f32; 2],
+    cursor_on: bool,
     out: &mut Vec<DrawCmd>,
     hit: &mut Vec<HitRegion>,
 ) {
@@ -528,8 +569,13 @@ fn layout_detail(
     }
     y += 4.0;
 
-    // Messages fill the space down to the reply box.
-    let reply_top = rect[1] + rect[3] - REPLY_H - 4.0;
+    // The reply box wraps its text and grows to REPLY_MAX_LINES lines; the
+    // messages fill the space left above it. The wrap is cached for Up/Down.
+    let input_w = width - 54.0;
+    ui.reply_wrap = wrap_indexed(&ui.reply, input_w - 8.0, measure);
+    let reply_lines = ui.reply_wrap.len().clamp(1, REPLY_MAX_LINES);
+    let input_h = reply_lines as f32 * LINE_HEIGHT + 8.0;
+    let reply_top = rect[1] + rect[3] - input_h - 4.0;
     let msg_rect = [x, y, width, (reply_top - y - 4.0).max(0.0)];
 
     let mut lines: Vec<(String, u32)> = Vec::new();
@@ -577,8 +623,9 @@ fn layout_detail(
         ly += LINE_HEIGHT;
     }
 
-    // The reply box: click to focus, type, Enter sends.
-    let input = [x, reply_top, width - 54.0, REPLY_H];
+    // The reply box: click to focus, type, Enter sends, Shift+Enter a new
+    // line. The wrapped window follows the line the cursor is on.
+    let input = [x, reply_top, input_w, input_h];
     fill(out, input, INPUT_BG);
     border(out, input, if ui.reply_focused { BUTTON_ACCENT } else { PANEL_BORDER });
     hit.push(HitRegion { rect: input, action: Action::FocusReply });
@@ -592,8 +639,25 @@ fn layout_detail(
     if !hint.is_empty() {
         text(out, [input[0] + 4.0, input[1] + 5.0], &ellipsize(hint, input[2] - 8.0, measure), TEXT_MUTED);
     } else {
-        let shown = reply_with_cursor(&ui.reply, ui.cursor_char(), ui.reply_focused);
-        text(out, [input[0] + 4.0, input[1] + 5.0], &ellipsize_tail(&shown, input[2] - 8.0, measure), TEXT_PRIMARY);
+        let cursor = ui.cursor_char();
+        let cursor_line = ui
+            .reply_wrap
+            .iter()
+            .rposition(|(_, start)| cursor >= *start)
+            .unwrap_or(0);
+        let first = (cursor_line + 1)
+            .saturating_sub(REPLY_MAX_LINES)
+            .min(ui.reply_wrap.len().saturating_sub(REPLY_MAX_LINES));
+        for (i, (line, _)) in ui.reply_wrap.iter().enumerate().skip(first).take(reply_lines) {
+            text(out, [input[0] + 4.0, input[1] + 5.0 + (i - first) as f32 * LINE_HEIGHT], line, TEXT_PRIMARY);
+        }
+        if ui.reply_focused && cursor_on {
+            let (line, start) = &ui.reply_wrap[cursor_line];
+            let before: String = line.chars().take(cursor - start).collect();
+            let cx = input[0] + 4.0 + measure(&before);
+            let cy = input[1] + 4.0 + (cursor_line - first) as f32 * LINE_HEIGHT;
+            fill(out, [cx, cy, 1.0, LINE_HEIGHT], TEXT_PRIMARY);
+        }
     }
     if let Some(error) = &ui.send_error {
         text(out, [input[0], input[1] - LINE_HEIGHT], error, 0xFF_6B_6B);
@@ -603,34 +667,20 @@ fn layout_detail(
         hit,
         measure,
         mouse,
-        [x + width - 50.0, reply_top, 50.0, REPLY_H],
+        [x + width - 50.0, input[1] + input[3] - REPLY_H, 50.0, REPLY_H],
         "Send",
         Action::Send,
     );
 }
 
-/// `reply` with a blinking block at the char cursor when focused.
-fn reply_with_cursor(reply: &str, cursor: usize, focused: bool) -> String {
-    let mut chars: Vec<char> = reply.chars().collect();
-    let mark = if focused { '▌' } else { ' ' };
-    let at = cursor.min(chars.len());
-    chars.insert(at, mark);
-    chars.into_iter().collect()
-}
-
-/// Keep the tail of a long line (the cursor's end) inside the box.
-fn ellipsize_tail(text: &str, width: f32, measure: &dyn Fn(&str) -> f32) -> String {
-    if measure(text) <= width {
-        return text.to_owned();
-    }
-    let mut out = String::new();
-    for c in text.chars().rev() {
-        if measure(&format!("…{c}{out}")) > width {
-            break;
-        }
-        out.insert(0, c);
-    }
-    format!("…{out}")
+/// The blink phase of a text cursor, straight off the wall clock: solid a
+/// little over half a second, dark the rest. Passed in so tests are steady.
+pub fn cursor_blink_on() -> bool {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    millis % 1000 < 600
 }
 
 /// A labelled rectangle that reports hover and clicks.
@@ -766,9 +816,112 @@ mod tests {
             &fixed,
             [0.0, 0.0, 400.0, 240.0],
             [-1.0, -1.0],
+            true,
         );
         assert!(ui.detail_scroll_max > 0.0);
         assert_eq!(ui.detail_scroll, ui.detail_scroll_max);
         assert!(!ui.detail_scroll_to_end);
+    }
+
+    fn detail() -> ThreadDetail {
+        ThreadDetail {
+            thread_ref: thread_ref(),
+            title: "t".to_owned(),
+            status: "completed".to_owned(),
+            pending_request_count: 0,
+            model: String::new(),
+            runtime_mode: String::new(),
+            branch: String::new(),
+            latest_run: None,
+            messages: Vec::new(),
+        }
+    }
+
+    fn connected() -> Snapshot {
+        Snapshot {
+            connection: Some(Connection::Connected),
+            ..Snapshot::default()
+        }
+    }
+
+    #[test]
+    fn wrap_indexed_tracks_line_starts() {
+        // 6px a char: 20px fits one word but never two, so each is a line.
+        let lines = wrap_indexed("aa bb cc", 20.0, &fixed);
+        assert_eq!(
+            lines,
+            vec![
+                ("aa".to_owned(), 0),
+                ("bb".to_owned(), 3),
+                ("cc".to_owned(), 6)
+            ]
+        );
+    }
+
+    /// A long reply wraps into a taller box, the window shows the tail the
+    /// cursor is on and the cursor is a drawn 1px line, not text.
+    #[test]
+    fn reply_wraps_and_draws_a_cursor() {
+        // 24 chars a line at the fixed measure: 24 four-char words make five
+        // lines, one more than the box shows.
+        let reply = (0..24)
+            .map(|i| format!("w{i:02}x"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut ui = ScreenUi {
+            selected: Some(thread_ref()),
+            detail: Some(detail()),
+            reply: reply.to_owned(),
+            reply_cursor: reply.chars().count(),
+            reply_focused: true,
+            ..ScreenUi::default()
+        };
+        let out = layout_screen(
+            &mut ui,
+            &connected(),
+            &Config::default(),
+            &fixed,
+            [0.0, 0.0, 400.0, 240.0],
+            [-1.0, -1.0],
+            true,
+        );
+        // More wrapped lines than fit: the box is at its tallest.
+        assert!(ui.reply_wrap.len() > REPLY_MAX_LINES);
+        let input = ui
+            .hit
+            .iter()
+            .find(|h| h.action == Action::FocusReply)
+            .expect("reply hit region");
+        assert_eq!(input.rect[3], REPLY_MAX_LINES as f32 * LINE_HEIGHT + 8.0);
+        // Only the last REPLY_MAX_LINES lines are drawn, inside the box.
+        let texts: Vec<&str> = out
+            .iter()
+            .filter_map(|c| match c {
+                DrawCmd::Text { at, text, .. }
+                    if at[0] == input.rect[0] + 4.0 && at[1] >= input.rect[1] =>
+                {
+                    Some(text.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            texts,
+            vec![
+                "w05x w06x w07x w08x w09x",
+                "w10x w11x w12x w13x w14x",
+                "w15x w16x w17x w18x w19x",
+                "w20x w21x w22x w23x"
+            ]
+        );
+        // The cursor is a 1px fill on the last line, not a character.
+        assert!(!texts.iter().any(|t| t.contains('▌')));
+        assert!(out.iter().any(|c| matches!(
+            c,
+            DrawCmd::Fill { rect, .. }
+                if rect[2] == 1.0
+                    && rect[1] >= input.rect[1]
+                    && rect[1] < input.rect[1] + input.rect[3]
+        )));
     }
 }

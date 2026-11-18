@@ -1,18 +1,16 @@
 // The mod's own screen (Screen::Mod draws nothing itself): render the
 // engine's draw commands each frame and keep its hit regions fresh.
 fn t3craft_draw(
-    game: &crate::game::Game<'_>,
-    batch: &mut horizon_client::hud::HudBatch,
-    screen: &crate::game::native_hooks::NativeScreenView<'_>,
+    game: &Game<'_>,
+    batch: &mut HudBatch,
 ) {
-    if game.native_mod_screen() != Some(t3craft_engine::ID) {
+    if game.mod_screen() != Some(t3craft_engine::ID) {
         return;
     }
-    let _ = screen;
-    let mouse = game.native_cursor();
+    let mouse = game.cursor();
     let rect = [0.0, 0.0, batch.width, batch.height];
     let commands = t3craft_engine::screen_commands(
-        &|text| game.native_text_width(text),
+        &|text| game.native_text_width(batch, text),
         rect,
         mouse,
     );
