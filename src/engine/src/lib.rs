@@ -17,6 +17,7 @@ mod ui;
 
 pub use config::{Config, HudAnchor};
 pub use model::{Attention, Connection, Snapshot, ThreadRef};
+pub use ui::{LINE_HEIGHT, PANEL_BG, TEXT_PRIMARY, TITLE};
 
 use config::{now_millis, ConfigStore};
 use monitor::{Command, Event, Monitor};
@@ -29,10 +30,9 @@ use ui::{Action, ScreenUi, Toast};
 
 /// The mod's id, as Options > Mods and the settings folder name it.
 pub const ID: &str = "t3craft";
-pub const NAME: &str = "T3 Craft";
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const DESCRIPTION: &str =
-    "See, read and reply to your T3 Code threads without leaving the game.";
+
+/// The Shift bit of the `modifiers` word the game hands key input.
+const MOD_SHIFT: u32 = 1;
 
 /// Its two rebindable keys: name, the label Options shows, the default.
 pub const KEY_OPEN: &str = "open_threads";
@@ -50,18 +50,17 @@ struct Engine {
     monitor: Monitor,
     events: Mutex<mpsc::Receiver<Event>>,
     effects: Mutex<Effects>,
-    /// The key the open key was last bound as, so a release matches.
+    /// Whether the toggle-HUD key hid the corner box.
     hud_hidden_by_key: Mutex<bool>,
     toasts: Mutex<Vec<Toast>>,
     started: Mutex<bool>,
 }
 
-/// What `tick` hands back for the game to do (opening/closing the screen and
+/// What `tick` hands back for the game to do (opening the screen and
 /// printing chat lines need `&mut Game`, which this crate cannot name).
 #[derive(Default, Clone)]
 pub struct Effects {
     pub open_screen: bool,
-    pub close_screen: bool,
     pub chat: Vec<String>,
 }
 
@@ -142,7 +141,6 @@ fn drain_events(engine: &Engine) {
     drop(rx);
     for event in pending {
         match event {
-            Event::Snapshot => {}
             Event::Transitions(transitions) => {
                 let notify = engine.config.read().unwrap().notify_on_change;
                 if notify {
@@ -161,7 +159,7 @@ fn drain_events(engine: &Engine) {
                     }
                     if transitions.len() > 3 {
                         toasts.push(Toast {
-                            title: "T3 Code".to_owned(),
+                            title: ui::TITLE.to_owned(),
                             line: format!("{} threads changed", transitions.len()),
                             color: ui::TEXT_MUTED,
                             until: Instant::now() + Duration::from_secs(6),
@@ -269,7 +267,7 @@ pub fn hud_model(measure: &dyn Fn(&str) -> f32) -> Option<ui::HudModel> {
         .map(|t| {
             (
                 t.title.clone(),
-                ui::ellipsize(&t.line, 220.0, measure),
+                ui::ellipsize(&t.line, ui::HUD_MAX_WIDTH, measure),
                 t.color,
             )
         });
@@ -283,15 +281,6 @@ pub fn hud_model(measure: &dyn Fn(&str) -> f32) -> Option<ui::HudModel> {
 }
 
 // ---- the mod's own screen ----
-
-/// Whether our screen is the one open (`native_mod_screen`) — the helpers ask
-/// this before feeding input.
-pub fn is_signing_in() -> bool {
-    ENGINE
-        .get()
-        .map(|e| e.monitor.snapshot().connection() == Connection::SigningIn)
-        .unwrap_or(false)
-}
 
 /// Draw the screen: commands the helper renders with `native_fill`/`native_text`.
 /// Also records the hit regions a later click reads. `measure` is
@@ -392,7 +381,7 @@ pub fn screen_key(key: &str, repeat: bool, modifiers: u32) -> bool {
     let Some(engine) = ENGINE.get() else {
         return false;
     };
-    let shift = modifiers & 1 != 0;
+    let shift = modifiers & MOD_SHIFT != 0;
     let mut ui = engine.ui.lock().unwrap();
     if ui.reply_focused {
         match key {
@@ -600,63 +589,6 @@ fn send_reply(engine: &Engine) {
     engine
         .monitor
         .send(Command::SendMessage(thread_ref, message));
-}
-
-// ---- Options > Mods' settings page ----
-
-/// The buttons the settings page shows, labelled with current values.
-pub fn settings_labels() -> Vec<String> {
-    let Some(engine) = ENGINE.get() else {
-        return Vec::new();
-    };
-    let config = engine.config.read().unwrap();
-    let on = |b: bool| if b { "ON" } else { "OFF" };
-    vec![
-        format!("Show HUD: {}", on(config.hud_enabled)),
-        format!("Corner: {}", config.hud_anchor.label()),
-        format!("HUD scale: {:.1}", config.hud_scale),
-        format!("HUD rows: {}", config.hud_max_rows),
-        format!("Show finished: {}", on(config.show_ready_threads)),
-        format!("Toasts: {}", on(config.notify_on_change)),
-        format!("Poll every: {}s", config.poll_seconds),
-        format!("Server: {}", config.normalized_server_url()),
-        "Reset server URL to discovered".to_owned(),
-    ]
-}
-
-/// A click on the page's `i`-th button: change the setting and save it.
-pub fn settings_click(index: usize) {
-    let Some(engine) = ENGINE.get() else {
-        return;
-    };
-    {
-        let mut config = engine.config.write().unwrap();
-        match index {
-            0 => config.hud_enabled = !config.hud_enabled,
-            1 => {
-                let next = (config
-                    .hud_anchor as usize + 1)
-                    % HudAnchor::ALL.len();
-                config.hud_anchor = HudAnchor::ALL[next];
-            }
-            2 => {
-                config.hud_scale = if config.hud_scale >= 2.0 { 0.5 } else { config.hud_scale + 0.5 };
-            }
-            3 => config.hud_max_rows = if config.hud_max_rows >= 20 { 1 } else { config.hud_max_rows + 1 },
-            4 => config.show_ready_threads = !config.show_ready_threads,
-            5 => config.notify_on_change = !config.notify_on_change,
-            6 => config.poll_seconds = if config.poll_seconds >= 60 { 2 } else { config.poll_seconds + 1 },
-            7 => {} // the URL itself: shown, changed below
-            8 => config.server_url = config::discover_local_server_url(),
-            _ => return,
-        }
-        let config = config.clone();
-        engine.store.lock().unwrap().config = config;
-        engine.store.lock().unwrap().save();
-    }
-    // Poll interval is live on the monitor.
-    let seconds = engine.config.read().unwrap().poll_seconds;
-    engine.monitor.send(Command::SetPollSeconds(seconds as i64));
 }
 
 fn inside(at: [f32; 2], rect: [f32; 4]) -> bool {

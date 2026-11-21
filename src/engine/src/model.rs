@@ -90,9 +90,6 @@ pub struct RunTiming {
 
 #[derive(Clone, Debug)]
 pub struct ThreadDetail {
-    /// Kept for parity with the Java model; the ref this detail answers.
-    #[allow(dead_code)]
-    pub thread_ref: ThreadRef,
     pub title: String,
     pub status: String,
     pub pending_request_count: i64,
@@ -126,17 +123,10 @@ impl Snapshot {
     pub fn connection(&self) -> Connection {
         self.connection.unwrap_or(Connection::SignedOut)
     }
-
-    pub fn threads_with(&self, attention: Attention) -> impl Iterator<Item = &ThreadSummary> {
-        self.threads.iter().filter(move |t| t.attention() == attention)
-    }
 }
 
 /// A thread moved into a state worth telling the player about.
 #[derive(Clone, Debug)]
 pub struct Transition {
     pub thread: ThreadSummary,
-    /// The attention it left, kept for parity with the Java model.
-    #[allow(dead_code)]
-    pub previous: Option<Attention>,
 }

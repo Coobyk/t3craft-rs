@@ -17,33 +17,10 @@ pub enum HudAnchor {
     BottomRight,
 }
 
-impl HudAnchor {
-    pub const ALL: [HudAnchor; 4] = [
-        HudAnchor::TopLeft,
-        HudAnchor::TopRight,
-        HudAnchor::BottomLeft,
-        HudAnchor::BottomRight,
-    ];
+/// The lowest poll cadence `sanitized` and the monitor allow.
+pub(crate) const POLL_MIN: i64 = 2;
 
-    pub fn is_right(self) -> bool {
-        matches!(self, HudAnchor::TopRight | HudAnchor::BottomRight)
-    }
-
-    pub fn is_bottom(self) -> bool {
-        matches!(self, HudAnchor::BottomLeft | HudAnchor::BottomRight)
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            HudAnchor::TopLeft => "Top left",
-            HudAnchor::TopRight => "Top right",
-            HudAnchor::BottomLeft => "Bottom left",
-            HudAnchor::BottomRight => "Bottom right",
-        }
-    }
-}
-
-/// What the player can change, mirrored on the mod's settings page.
+/// What the player can change, saved to `config.json`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
@@ -96,15 +73,15 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             server_url: default_server_url(),
-            hud_enabled: true,
+            hud_enabled: default_true(),
             hud_anchor: default_anchor(),
-            hud_offset_x: 4,
-            hud_offset_y: 4,
-            hud_scale: 1.0,
-            hud_max_rows: 6,
-            show_ready_threads: true,
-            notify_on_change: true,
-            poll_seconds: 5,
+            hud_offset_x: default_offset(),
+            hud_offset_y: default_offset(),
+            hud_scale: default_scale(),
+            hud_max_rows: default_rows(),
+            show_ready_threads: default_true(),
+            notify_on_change: default_true(),
+            poll_seconds: default_poll(),
         }
     }
 }
@@ -122,7 +99,7 @@ impl Config {
         }
         self.hud_scale = self.hud_scale.clamp(0.5, 2.0);
         self.hud_max_rows = self.hud_max_rows.clamp(1, 20);
-        self.poll_seconds = self.poll_seconds.clamp(2, 60);
+        self.poll_seconds = self.poll_seconds.clamp(POLL_MIN as i32, 60);
         self
     }
 }

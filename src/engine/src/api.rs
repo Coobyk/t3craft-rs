@@ -112,7 +112,6 @@ impl<'a> T3Api<'a> {
 
         let thread = &latest["thread"];
         Ok(ThreadDetail {
-            thread_ref: thread_ref.clone(),
             title: str_of(thread, "title"),
             status: str_of(thread, "status"),
             pending_request_count: int_of(thread, "pendingRequestCount"),

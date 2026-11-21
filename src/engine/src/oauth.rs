@@ -44,8 +44,8 @@ pub fn start(server_url: &str) -> Result<PendingLogin, String> {
     let redirect_uri = format!("http://127.0.0.1:{port}{CALLBACK_PATH}");
 
     let client_id = register(server_url, &redirect_uri)?;
-    let verifier = random_url_safe(48);
-    let state = random_url_safe(24);
+    let verifier = random_url_safe(48)?;
+    let state = random_url_safe(24)?;
     let authorize_url = authorize_url(server_url, &client_id, &redirect_uri, &verifier, &state);
 
     let (tx, result) = mpsc::channel();
@@ -308,10 +308,11 @@ fn s256(verifier: &str) -> String {
         .encode(Sha256::digest(verifier.as_bytes()))
 }
 
-fn random_url_safe(byte_count: usize) -> String {
+fn random_url_safe(byte_count: usize) -> Result<String, String> {
     let mut bytes = vec![0u8; byte_count];
-    let _ = getrandom::getrandom(&mut bytes);
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+    getrandom::getrandom(&mut bytes)
+        .map_err(|e| format!("Could not get random bytes for the sign-in: {e}"))?;
+    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
 }
 
 fn escape_html(text: &str) -> String {

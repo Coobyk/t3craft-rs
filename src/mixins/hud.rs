@@ -18,10 +18,10 @@ fn t3craft_hud(
     // Title plus one line a thread. Measure everything before drawing: the
     // measurer borrows the batch read-only, drawing needs it mutably.
     let mut rows: Vec<(String, u32)> = Vec::with_capacity(model.rows.len() + 1);
-    rows.push(("T3 Code".to_owned(), 0xF2_F2_F2));
+    rows.push((t3craft_engine::TITLE.to_owned(), t3craft_engine::TEXT_PRIMARY));
     rows.extend(model.rows.iter().cloned());
     let w = width_of(&rows) * model.scale;
-    let h = (rows.len() as f32 * 10.0 + 4.0) * model.scale;
+    let h = (rows.len() as f32 * t3craft_engine::LINE_HEIGHT + 4.0) * model.scale;
     let toast = model.toast.as_ref().map(|(title, line, color)| {
         let tw = width_of(&[(title.clone(), 0), (line.clone(), 0)]) + 8.0;
         (title, line, color, tw)
@@ -38,12 +38,12 @@ fn t3craft_hud(
     }
 
     let (x, y) = corners.place(corner, w, h);
-    game.native_fill(batch, [x, y, w, h], 0xB0_10_10_14);
+    game.native_fill(batch, [x, y, w, h], t3craft_engine::PANEL_BG);
     let mut ty = y + 2.0 * model.scale;
     for (text, color) in &rows {
         let tx = x + 4.0 * model.scale;
         game.native_text(batch, text, [tx, ty], *color, true);
-        ty += 10.0 * model.scale;
+        ty += t3craft_engine::LINE_HEIGHT * model.scale;
     }
 
     // The toast card, while a transition is fresh: under the box for top
@@ -59,6 +59,6 @@ fn t3craft_hud(
         };
         game.native_fill(batch, [x, ty0, tw, 24.0], 0xE0_10_10_14);
         game.native_text(batch, title, [x + 4.0, ty0 + 4.0], *color, true);
-        game.native_text(batch, line, [x + 4.0, ty0 + 13.0], 0xF2_F2_F2, true);
+        game.native_text(batch, line, [x + 4.0, ty0 + 13.0], t3craft_engine::TEXT_PRIMARY, true);
     }
 }

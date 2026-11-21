@@ -10,9 +10,6 @@ fn t3craft_tick(game: &mut Game<'_>) {
     if effects.open_screen {
         game.mod_screen_open(t3craft_engine::ID);
     }
-    if effects.close_screen {
-        game.mod_screen_close(t3craft_engine::ID);
-    }
     for line in effects.chat {
         game.native_chat(&line);
     }

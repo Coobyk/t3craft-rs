@@ -215,8 +215,11 @@ pub fn ellipsize(text: &str, width: f32, measure: &dyn Fn(&str) -> f32) -> Strin
 
 // ---- the HUD ----
 
+/// The title over the corner box, the settings screen and a folded toast.
+pub const TITLE: &str = "T3 Code";
+
 /// The widest a HUD line may render; titles longer than this get a "…".
-const HUD_MAX_WIDTH: f32 = 220.0;
+pub const HUD_MAX_WIDTH: f32 = 220.0;
 
 /// The rows the corner box shows: one per live thread (attention order,
 /// sections dropped — the box is small), capped at `max_rows`, plus a
@@ -311,7 +314,7 @@ pub fn layout_screen(
     border(&mut out, panel, PANEL_BORDER);
 
     // Header: title left, connection state right.
-    text(&mut out, [panel[0] + 8.0, panel[1] + 7.0], "T3 Code", TEXT_PRIMARY);
+    text(&mut out, [panel[0] + 8.0, panel[1] + 7.0], TITLE, TEXT_PRIMARY);
     let status = connection_label(snapshot.connection());
     let sw = measure(status);
     text(
@@ -787,7 +790,6 @@ mod tests {
         let mut ui = ScreenUi {
             selected: Some(thread_ref()),
             detail: Some(ThreadDetail {
-                thread_ref: thread_ref(),
                 title: "t".to_owned(),
                 status: "completed".to_owned(),
                 pending_request_count: 0,
@@ -825,7 +827,6 @@ mod tests {
 
     fn detail() -> ThreadDetail {
         ThreadDetail {
-            thread_ref: thread_ref(),
             title: "t".to_owned(),
             status: "completed".to_owned(),
             pending_request_count: 0,

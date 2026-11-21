@@ -9,7 +9,7 @@ capabilities = ["registries"]
 
 [native]
 game = "26.3"
-horizon = "0b14f8acfd97fa2c750e42795249dcc981178ca4"
+horizon = "f00125f61f794aaa3d4e950d301f353b35b6ee3d"
 mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
 
 # Every client tick: start the monitor, drain its events and open or close the

@@ -3,12 +3,11 @@
 //! `poll_seconds`, and posts what changed for the game to read.
 
 use crate::api::T3Api;
-use crate::config::StoredCredential;
+use crate::config::{StoredCredential, POLL_MIN};
 use crate::mcp::{describe, McpClient, McpError};
 use crate::model::*;
 use crate::oauth;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, RwLock};
 use std::time::{Duration, Instant};
 
@@ -26,13 +25,10 @@ pub enum Command {
     SetPollSeconds(i64),
     ReadThread(ThreadRef),
     SendMessage(ThreadRef, String),
-    Shutdown,
 }
 
 /// What the monitor tells the game thread (drained in `tick`).
 pub enum Event {
-    /// `snapshot` changed; re-read it.
-    Snapshot,
     /// Threads newly needing you or newly finished (for toasts).
     Transitions(Vec<Transition>),
     /// Sign-in wants a browser: this URL. The engine opens it and shows it.
@@ -52,19 +48,16 @@ pub enum Event {
 pub struct Monitor {
     tx: mpsc::Sender<Command>,
     snapshot: Arc<RwLock<Snapshot>>,
-    stop: Arc<AtomicBool>,
 }
 
 impl Monitor {
     pub fn spawn(events: mpsc::Sender<Event>) -> Self {
         let (tx, rx) = mpsc::channel::<Command>();
         let snapshot = Arc::new(RwLock::new(Snapshot::default()));
-        let stop = Arc::new(AtomicBool::new(false));
         let worker = Worker {
             rx,
             events,
             snapshot: Arc::clone(&snapshot),
-            stop: Arc::clone(&stop),
             mcp: None,
             pending_login: None,
             projects: Vec::new(),
@@ -77,7 +70,7 @@ impl Monitor {
         let _ = std::thread::Builder::new()
             .name("t3craft-monitor".into())
             .spawn(move || worker.run());
-        Self { tx, snapshot, stop }
+        Self { tx, snapshot }
     }
 
     pub fn send(&self, command: Command) {
@@ -87,24 +80,12 @@ impl Monitor {
     pub fn snapshot(&self) -> Snapshot {
         self.snapshot.read().map(|s| s.clone()).unwrap_or_default()
     }
-
-    pub fn shutdown(&self) {
-        self.stop.store(true, Ordering::Relaxed);
-        let _ = self.tx.send(Command::Shutdown);
-    }
-}
-
-impl Drop for Monitor {
-    fn drop(&mut self) {
-        self.shutdown();
-    }
 }
 
 struct Worker {
     rx: mpsc::Receiver<Command>,
     events: mpsc::Sender<Event>,
     snapshot: Arc<RwLock<Snapshot>>,
-    stop: Arc<AtomicBool>,
     mcp: Option<McpClient>,
     pending_login: Option<oauth::PendingLogin>,
     projects: Vec<(Environment, Vec<Project>)>,
@@ -118,9 +99,6 @@ struct Worker {
 impl Worker {
     fn run(mut self) {
         loop {
-            if self.stop.load(Ordering::Relaxed) {
-                return;
-            }
             let timeout = self
                 .next_poll
                 .saturating_duration_since(Instant::now())
@@ -134,7 +112,7 @@ impl Worker {
             if self.mcp.is_some() && Instant::now() >= self.next_poll {
                 self.poll();
                 self.next_poll = Instant::now()
-                    + Duration::from_secs(self.poll_seconds.max(2) as u64);
+                    + Duration::from_secs(self.poll_seconds.max(POLL_MIN) as u64);
             }
         }
     }
@@ -166,10 +144,10 @@ impl Worker {
                 if self.mcp.is_some() {
                     self.poll();
                     self.next_poll = Instant::now()
-                        + Duration::from_secs(self.poll_seconds.max(2) as u64);
+                        + Duration::from_secs(self.poll_seconds.max(POLL_MIN) as u64);
                 }
             }
-            Command::SetPollSeconds(seconds) => self.poll_seconds = seconds.max(2),
+            Command::SetPollSeconds(seconds) => self.poll_seconds = seconds.max(POLL_MIN),
             Command::ReadThread(thread_ref) => {
                 let detail = match Self::api_of(&mut self.mcp) {
                     Some(mut api) => api
@@ -192,7 +170,6 @@ impl Worker {
                     self.next_poll = Instant::now();
                 }
             }
-            Command::Shutdown => self.stop.store(true, Ordering::Relaxed),
         }
     }
 
@@ -419,7 +396,6 @@ impl Worker {
                     || (thread.attention() == Attention::Ready && before == Some(Attention::Running));
                 (noteworthy && before != Some(thread.attention())).then(|| Transition {
                     thread: thread.clone(),
-                    previous: before,
                 })
             })
             .collect();
@@ -449,7 +425,6 @@ impl Worker {
         if let Ok(mut current) = self.snapshot.write() {
             *current = snapshot;
         }
-        let _ = self.events.send(Event::Snapshot);
     }
 
     fn snapshot(&self) -> Snapshot {

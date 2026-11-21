@@ -10,39 +10,14 @@ use std::time::Duration;
 const PROTOCOL_VERSION: &str = "2025-06-18";
 const SESSION_HEADER: &str = "Mcp-Session-Id";
 
-/// The token T3 Code saved was refused (401/403): sign in again.
-#[derive(Debug)]
-pub struct Unauthorized;
-
-/// The tool call itself failed (the MCP `isError` result).
-#[derive(Debug)]
-pub struct ToolError(pub String);
-
-/// Anything else: T3 Code unreachable, a bad reply, a non-tool MCP error.
-#[derive(Debug)]
-pub struct ProtocolError(pub String);
-
+/// How a call to T3 Code failed: the saved token was refused (401/403, sign
+/// in again), the tool call itself failed (the MCP `isError` result), or
+/// anything else (unreachable, a bad reply, a non-tool MCP error).
 #[derive(Debug)]
 pub enum McpError {
     Unauthorized,
     Tool(String),
     Protocol(String),
-}
-
-impl From<Unauthorized> for McpError {
-    fn from(_: Unauthorized) -> Self {
-        McpError::Unauthorized
-    }
-}
-impl From<ToolError> for McpError {
-    fn from(e: ToolError) -> Self {
-        McpError::Tool(e.0)
-    }
-}
-impl From<ProtocolError> for McpError {
-    fn from(e: ProtocolError) -> Self {
-        McpError::Protocol(e.0)
-    }
 }
 
 pub struct McpClient {
@@ -76,12 +51,12 @@ impl McpClient {
         let params = json!({ "name": name, "arguments": arguments });
         let result = self.request_with_session("tools/call", params)?;
         if result.get("isError").and_then(Value::as_bool) == Some(true) {
-            return Err(ToolError(tool_error_text(&result)).into());
+            return Err(McpError::Tool(tool_error_text(&result)));
         }
         result
             .get("structuredContent")
             .cloned()
-            .ok_or_else(|| ProtocolError(format!("{name} returned no structured content.")).into())
+            .ok_or_else(|| McpError::Protocol(format!("{name} returned no structured content.")))
     }
 
     /// Leave the session, as the Java mod's `close()`.
@@ -145,7 +120,7 @@ impl McpClient {
                 .and_then(Value::as_str)
                 .unwrap_or("MCP error.")
                 .to_owned();
-            return Err(ProtocolError(format!("{msg} (on {method})")).into());
+            return Err(McpError::Protocol(format!("{msg} (on {method})")));
         }
         Ok(message.get("result").cloned().unwrap_or(Value::Null))
     }
@@ -173,27 +148,25 @@ impl McpClient {
                 let content_type = response.content_type().to_owned();
                 let text = response
                     .into_string()
-                    .map_err(|e| ProtocolError(format!("T3 Code's reply was not UTF-8: {e}")))?;
+                    .map_err(|e| McpError::Protocol(format!("T3 Code's reply was not UTF-8: {e}")))?;
                 Ok((session, content_type, text))
             }
             Err(ureq::Error::Status(code, response)) => match code {
-                401 | 403 => Err(Unauthorized.into()),
+                401 | 403 => Err(McpError::Unauthorized),
                 404 if self.session_id.is_some() => {
-                    Err(ProtocolError(SESSION_EXPIRED.to_owned()).into())
+                    Err(McpError::Protocol(SESSION_EXPIRED.to_owned()))
                 }
                 _ => {
                     let text = response.into_string().unwrap_or_default();
-                    Err(ProtocolError(format!(
+                    Err(McpError::Protocol(format!(
                         "T3 Code answered HTTP {code}: {}",
                         text.chars().take(200).collect::<String>()
-                    ))
-                    .into())
+                    )))
                 }
             },
-            Err(ureq::Error::Transport(e)) => Err(ProtocolError(format!(
+            Err(ureq::Error::Transport(e)) => Err(McpError::Protocol(format!(
                 "Could not reach T3 Code: {e}"
-            ))
-            .into()),
+            ))),
         }
     }
 }
@@ -215,7 +188,7 @@ fn find_response(content_type: &str, body: &str, id: u64) -> Result<Value, McpEr
     messages
         .into_iter()
         .find(|m| m.get("id").and_then(Value::as_u64) == Some(id))
-        .ok_or_else(|| ProtocolError(format!("T3 Code sent no reply to request {id}.")).into())
+        .ok_or_else(|| McpError::Protocol(format!("T3 Code sent no reply to request {id}.")))
 }
 
 fn flatten_batch(element: Value) -> Vec<Value> {
