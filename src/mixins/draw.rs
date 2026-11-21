@@ -20,7 +20,7 @@ fn t3craft_draw(
                 game.native_fill(batch, rect, argb);
             }
             t3craft_engine::DrawCmd::Text { at, text, rgb, shadow } => {
-                game.native_text(batch, &text, at, rgb, shadow);
+                game.native_text(batch, &text, at, rgb | 0xFF00_0000, shadow);
             }
         }
     }
